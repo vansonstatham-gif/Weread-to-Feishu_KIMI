@@ -5,7 +5,7 @@ from weread import WeReadClient
 from feishu import FeishuClient
 
 def sync_books_to_feishu(weread_client, feishu_client, base_id, table_id):
-    """同步书籍信息（安全模式：只更新或新增，不删除）"""
+    """同步书籍信息到飞书多维表格"""
     print("\n📚 开始同步书籍信息...")
     
     books = weread_client.get_shelf()
@@ -15,17 +15,8 @@ def sync_books_to_feishu(weread_client, feishu_client, base_id, table_id):
     
     print("\n🔍 查询飞书现有书籍记录...")
     existing_records = feishu_client.list_records(base_id, table_id)
-    
-    # 构建书籍ID映射
-    existing_books = {}
-    for record in existing_records:
-        fields = record.get('fields', {})
-        book_id = fields.get('书籍ID')
-        if book_id:
-            existing_books[book_id] = {
-                'record_id': record.get('record_id'),
-                'fields': fields
-            }
+    existing_books = {record.get('fields', {}).get('书籍ID'): record 
+                     for record in existing_records}
     
     print(f"✅ 找到 {len(existing_books)} 本已存在的书籍")
     
@@ -58,13 +49,13 @@ def sync_books_to_feishu(weread_client, feishu_client, base_id, table_id):
             '更新时间': int(datetime.now().timestamp()),
         }
         
-        # 🔥 安全模式：存在则更新，不存在则新增，绝不删除
+        # 智能处理
         if book_id in existing_books:
             record_id = existing_books[book_id]['record_id']
+            
             if feishu_client.update_record(base_id, table_id, record_id, fields):
                 update_count += 1
             else:
-                # 更新失败也不删除，直接新增一条
                 print(f"  ⚠️  更新失败，改为新增记录...")
                 if feishu_client.add_record(base_id, table_id, fields):
                     success_count += 1
@@ -79,7 +70,7 @@ def sync_books_to_feishu(weread_client, feishu_client, base_id, table_id):
     print(f"\n📊 书籍同步完成: 新增 {success_count} 本, 更新 {update_count} 本, 失败 {error_count} 本")
 
 def sync_notes_to_feishu(weread_client, feishu_client, base_id, notes_table_id):
-    """同步读书笔记（安全模式：只新增，跳过已存在）"""
+    """同步读书笔记到飞书多维表格"""
     print("\n📝 开始同步读书笔记...")
     
     books = weread_client.get_shelf()
@@ -139,12 +130,12 @@ def sync_notes_to_feishu(weread_client, feishu_client, base_id, notes_table_id):
 
 def main():
     """主函数"""
+    # 🔥 修复：只检查必填变量，FEISHU_NOTES_TABLE_ID 可选
     required_vars = {
         'FEISHU_APP_ID': os.environ.get('FEISHU_APP_ID'),
         'FEISHU_APP_SECRET': os.environ.get('FEISHU_APP_SECRET'),
         'FEISHU_BASE_ID': os.environ.get('FEISHU_BASE_ID'),
         'FEISHU_TABLE_ID': os.environ.get('FEISHU_TABLE_ID'),
-        'FEISHU_NOTES_TABLE_ID': os.environ.get('FEISHU_NOTES_TABLE_ID'),
         'WEREAD_COOKIE': os.environ.get('WEREAD_COOKIE')
     }
     
@@ -153,12 +144,22 @@ def main():
         print(f"❌ 缺少必要的环境变量: {', '.join(missing_vars)}")
         sys.exit(1)
     
+    # 笔记表格ID是可选的
+    notes_table_id = os.environ.get('FEISHU_NOTES_TABLE_ID')
+    
     print("="*60)
     print("📚 微信读书 → 飞书多维表格 同步工具")
     print("="*60)
     print(f"✅ 环境变量检查通过")
-    print(f"⚠️  安全模式：不会删除任何数据")
+    print(f"📌 飞书 Base ID: {required_vars['FEISHU_BASE_ID']}")
+    print(f"📌 书籍表格 ID: {required_vars['FEISHU_TABLE_ID']}")
+    if notes_table_id:
+        print(f"📌 笔记表格 ID: {notes_table_id}")
+    else:
+        print(f"⚠️  未配置笔记表格 ID，将跳过笔记同步")
+    print(f"👤 微信读书用户: {dict(item.split('=') for item in required_vars['WEREAD_COOKIE'].split('; ')).get('wr_name', '未知')}")
     
+    # 初始化客户端
     try:
         weread_client = WeReadClient(required_vars['WEREAD_COOKIE'])
         feishu_client = FeishuClient(required_vars['FEISHU_APP_ID'], required_vars['FEISHU_APP_SECRET'])
@@ -168,7 +169,9 @@ def main():
         traceback.print_exc()
         sys.exit(1)
     
+    # 执行同步
     try:
+        # 同步书籍信息（必须）
         sync_books_to_feishu(
             weread_client, 
             feishu_client, 
@@ -176,20 +179,24 @@ def main():
             required_vars['FEISHU_TABLE_ID']
         )
         
-        sync_notes_to_feishu(
-            weread_client, 
-            feishu_client, 
-            required_vars['FEISHU_BASE_ID'], 
-            required_vars['FEISHU_NOTES_TABLE_ID']
-        )
+        # 🔥 可选：同步读书笔记
+        if notes_table_id:
+            sync_notes_to_feishu(
+                weread_client, 
+                feishu_client, 
+                required_vars['FEISHU_BASE_ID'], 
+                notes_table_id
+            )
+        else:
+            print("\nℹ️  未配置 FEISHU_NOTES_TABLE_ID，跳过笔记同步")
         
         print("\n" + "="*60)
-        print("🎉 同步完成！数据安全，无删除操作")
+        print("🎉 所有数据同步完成!")
         print("📊 请检查飞书多维表格")
         print("="*60)
         
     except Exception as e:
-        print(f"\n❌ 同步失败: {e}")
+        print(f"\n❌ 同步过程中出错: {e}")
         import traceback
         traceback.print_exc()
         sys.exit(1)
