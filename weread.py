@@ -15,7 +15,7 @@ class WeReadClient:
         self.session.headers.update(self.headers)
     
     def get_shelf(self):
-        """获取书架数据，跳过无效书籍"""
+        """获取书架数据"""
         url = "https://weread.qq.com/web/shelf/sync"
         try:
             response = self.session.get(url, timeout=10)
@@ -23,59 +23,55 @@ class WeReadClient:
             data = response.json()
             
             books = []
-            print(f"📦 API返回的书籍总数: {len(data.get('books', []))}")
+            all_books = data.get('books', [])
+            print(f"📦 API返回的书籍总数: {len(all_books)}")
             
-            if 'books' in data and len(data['books']) > 0:
-                # 🔍 打印第一本书的完整结构用于调试
-                print("\n=== 调试：第一本书的原始数据结构 ===")
-                first_book = data['books'][0]
-                print(json.dumps(first_book, ensure_ascii=False, indent=2))
-                print("="*50 + "\n")
+            # 跳过前2本书籍（如果需要调试，可以取消下面这段的注释）
+            # if all_books:
+            #     print("\n=== 首本书籍结构示例 ===")
+            #     print(json.dumps(all_books[0], ensure_ascii=False, indent=2))
+            #     print("="*50)
             
-            for idx, book in enumerate(data.get('books', [])):
-                book_info = book.get('book', {})
-                
-                # 🔍 尝试多种可能的书名字段
-                title = (
-                    book_info.get('title') or 
-                    book.get('title') or 
-                    book_info.get('bookName') or
-                    book.get('bookName') or
-                    '未知标题'
-                )
-                
-                book_id = book_info.get('bookId') or book.get('bookId')
+            for book in all_books:
+                # 🔥 关键修复：数据在顶层，不在book对象中
+                book_id = book.get('bookId')
+                title = book.get('title')
                 
                 # 跳过无效书籍
-                if not book_id or not title or title == '未知标题':
-                    print(f"跳过无效书籍: ID={book_id}, 标题={title}")
+                if not book_id or not title:
+                    print(f"⚠️  跳过无效书籍: ID={book_id}, 标题={title}")
                     continue
                 
-                # 跳过公众号等特殊内容（ID包含字母）
+                # 跳过非数字ID的内容（如公众号CB_开头）
                 if isinstance(book_id, str) and not book_id.isdigit():
-                    print(f"跳过非书籍内容: ID={book_id}, 标题={title}")
+                    print(f"📄 跳过非书籍内容: ID={book_id}, 标题={title}")
                     continue
+                
+                # 🔥 关键修复：日期字段转换为Unix时间戳
+                last_read_time = 0
+                if book.get('readingBook') and book['readingBook'].get('readingTime'):
+                    last_read_time = int(book['readingBook']['readingTime'])
                 
                 books.append({
                     'book_id': str(book_id),
                     'title': title,
-                    'author': book_info.get('author', '未知作者'),
-                    'cover': book_info.get('cover', ''),
-                    'category': book_info.get('category', ''),
+                    'author': book.get('author', '未知作者'),
+                    'cover': book.get('cover', ''),
+                    'category': book.get('category', ''),
                     'finished': bool(book.get('finishReading', False)),
                     'reading_time': int(book.get('readingTime', 0)),
                     'progress': float(book.get('progress', 0)),
-                    'format': book_info.get('format', 'book'),
-                    'intro': book_info.get('intro', ''),
-                    'last_read_date': datetime.fromtimestamp(
-                        book.get('readingBook', {}).get('readingTime', 0)
-                    ).strftime('%Y-%m-%d %H:%M:%S') if book.get('readingBook') else None
+                    'format': book.get('format', 'book'),
+                    'intro': book.get('intro', ''),
+                    'last_read_time': last_read_time,  # Unix时间戳
                 })
             
-            print(f"✅ 有效书籍数量: {len(books)}/{len(data.get('books', []))}")
+            print(f"✅ 有效书籍数量: {len(books)}/{len(all_books)}")
             return books
         except Exception as e:
             print(f"❌ 获取书架数据失败: {e}")
+            import traceback
+            traceback.print_exc()
             return []
     
     def get_book_notes(self, book_id):
@@ -95,18 +91,18 @@ class WeReadClient:
                     if not review.get('reviewId'):
                         continue
                     
+                    # 日期转换为Unix时间戳
+                    create_time = int(review.get('createTime', 0))
+                    update_time = int(review.get('updateTime', 0))
+                    
                     notes.append({
                         'review_id': str(review['reviewId']),
                         'book_id': str(book_id),
                         'chapter_name': review.get('chapterName', ''),
                         'abstract': review.get('abstract', ''),
                         'content': review.get('content', ''),
-                        'create_time': datetime.fromtimestamp(
-                            review.get('createTime', 0)
-                        ).strftime('%Y-%m-%d %H:%M:%S'),
-                        'update_time': datetime.fromtimestamp(
-                            review.get('updateTime', 0)
-                        ).strftime('%Y-%m-%d %H:%M:%S')
+                        'create_time': create_time,
+                        'update_time': update_time,
                     })
             
             return notes
@@ -135,7 +131,6 @@ class WeReadClient:
             }
         except requests.exceptions.HTTPError as e:
             if e.response.status_code == 404:
-                # 对于非书籍内容，返回空统计
                 return {
                     'read_time': 0, 'read_pages': 0, 'finish_pages': 0,
                     'total_pages': 0, 'read_days': 0, 'max_continuous_days': 0
