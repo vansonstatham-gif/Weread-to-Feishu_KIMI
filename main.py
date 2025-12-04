@@ -15,6 +15,7 @@ def sync_books_to_feishu(weread_client, feishu_client, base_id, table_id):
         return
     
     # 查询已存在的记录
+    print("\n🔍 查询飞书现有记录...")
     existing_records = feishu_client.list_records(base_id, table_id)
     existing_books = {record.get('fields', {}).get('书籍ID'): record 
                      for record in existing_records}
@@ -32,15 +33,21 @@ def sync_books_to_feishu(weread_client, feishu_client, base_id, table_id):
         # 获取阅读统计
         stats = weread_client.get_reading_stats(book_id)
         
-        # 🔥 关键修复：所有日期字段改为Unix时间戳
+        # 🔥 关键修复：进度从0-1转换为0-100
+        progress_pct = float(book['progress']) * 100
+        
+        # 阅读时长从秒转换为分钟
+        read_minutes = int(book['reading_time'] / 60) if book['reading_time'] else 0
+        
+        # 构建字段数据（所有日期字段必须是Unix时间戳）
         fields = {
             '书籍ID': book_id,
             '标题': title,
             '作者': book['author'],
             '封面': book['cover'],
             '分类': book['category'],
-            '阅读进度': float(book['progress']),
-            '阅读时长(分钟)': int(book['reading_time'] / 60) if book['reading_time'] else 0,
+            '阅读进度': progress_pct,  # 0-100
+            '阅读时长(分钟)': read_minutes,
             '是否读完': book['finished'],
             '阅读页数': stats.get('read_pages', 0),
             '总页数': stats.get('total_pages', 0),
@@ -48,6 +55,10 @@ def sync_books_to_feishu(weread_client, feishu_client, base_id, table_id):
             '最后阅读时间': book['last_read_time'],  # Unix时间戳
             '更新时间': int(datetime.now().timestamp()),  # Unix时间戳
         }
+        
+        # 打印调试信息（前3本）
+        if idx <= 3:
+            print(f"  📊 数据示例: 进度={progress_pct}%, 时长={read_minutes}分钟, 最后阅读={book['last_read_time']}")
         
         # 判断是新增还是更新
         if book_id in existing_books:
@@ -77,9 +88,12 @@ def main():
         print(f"❌ 缺少必要的环境变量: {', '.join(missing_vars)}")
         sys.exit(1)
     
-    print("✅ 环境变量检查通过")
-    print(f"飞书 Base ID: {required_vars['FEISHU_BASE_ID']}")
-    print(f"微信读书用户: {dict(item.split('=') for item in required_vars['WEREAD_COOKIE'].split('; ')).get('wr_name', '未知')}")
+    print("="*60)
+    print("📚 微信读书 → 飞书多维表格 同步工具")
+    print("="*60)
+    print(f"✅ 环境变量检查通过")
+    print(f"📌 飞书 Base ID: {required_vars['FEISHU_BASE_ID']}")
+    print(f"👤 微信读书用户: {dict(item.split('=') for item in required_vars['WEREAD_COOKIE'].split('; ')).get('wr_name', '未知')}")
     
     # 初始化客户端
     try:
@@ -100,7 +114,10 @@ def main():
             required_vars['FEISHU_TABLE_ID']
         )
         
-        print("\n🎉 所有数据同步完成!")
+        print("\n" + "="*60)
+        print("🎉 所有数据同步完成!")
+        print("📊 请检查飞书多维表格中的数据")
+        print("="*60)
         
     except Exception as e:
         print(f"\n❌ 同步过程中出错: {e}")
