@@ -1,5 +1,5 @@
 import requests
-import json
+import sys
 from datetime import datetime
 
 class FeishuClient:
@@ -69,9 +69,8 @@ class FeishuClient:
         headers = self._get_headers()
         data = {"fields": fields}
         
-        # 检查必要字段
-        if not fields.get('书籍ID') and not fields.get('笔记ID'):
-            print(f"⚠️  跳过添加: 缺少ID字段")
+        if not fields.get('书籍ID'):
+            print(f"⚠️  跳过添加: 缺少书籍ID")
             return False
         
         try:
@@ -80,7 +79,7 @@ class FeishuClient:
             result = response.json()
             
             if result.get('code') == 0:
-                print(f"✅ 成功添加: {fields.get('标题', fields.get('书名', '未知'))}")
+                print(f"✅ 成功添加: {fields.get('标题', '未知')}")
                 return True
             else:
                 print(f"❌ 添加记录失败: {result}")
@@ -102,7 +101,7 @@ class FeishuClient:
             result = response.json()
             
             if result.get('code') == 0:
-                print(f"✅ 成功更新: {fields.get('标题', fields.get('书名', '未知'))}")
+                print(f"✅ 成功更新: {fields.get('标题', '未知')}")
                 return True
             else:
                 print(f"❌ 更新记录失败: {result}")
