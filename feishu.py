@@ -26,7 +26,6 @@ class FeishuClient:
                 print("✅ 成功获取飞书 access token")
             else:
                 print(f"❌ 获取 access token 失败: {result}")
-                print("请检查 App ID 和 App Secret 是否正确")
                 sys.exit(1)
         except Exception as e:
             print(f"❌ 获取 access token 异常: {e}")
@@ -105,10 +104,29 @@ class FeishuClient:
                 return True
             else:
                 print(f"❌ 更新记录失败: {result}")
-                self._check_permission_error(result)
                 return False
         except Exception as e:
             print(f"❌ 更新记录异常: {e}")
+            return False
+    
+    def delete_record(self, base_id, table_id, record_id):
+        """删除单条记录"""
+        url = f"{self.base_url}/bitable/v1/apps/{base_id}/tables/{table_id}/records/{record_id}"
+        headers = self._get_headers()
+        
+        try:
+            response = requests.delete(url, headers=headers, timeout=10)
+            response.raise_for_status()
+            result = response.json()
+            
+            if result.get('code') == 0:
+                print(f"🗑️  成功删除记录: {record_id[:20]}...")
+                return True
+            else:
+                print(f"❌ 删除记录失败: {result}")
+                return False
+        except Exception as e:
+            print(f"❌ 删除记录异常: {e}")
             return False
     
     def _check_permission_error(self, result):
