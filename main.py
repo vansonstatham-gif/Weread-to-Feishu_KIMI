@@ -19,17 +19,20 @@ def sync_books_to_feishu(weread_client, feishu_client, base_id, table_id):
     existing_books = {record.get('fields', {}).get('书籍ID'): record 
                      for record in existing_records}
     
-    # 同步每本书
-    success_count, update_count, skip_count = 0, 0, 0
+    # 统计
+    success_count, update_count = 0, 0
     
-    for book in books:
+    # 同步每本书
+    for idx, book in enumerate(books, 1):
         book_id = book['book_id']
         title = book['title']
+        
+        print(f"[{idx}/{len(books)}] 处理: {title}")
         
         # 获取阅读统计
         stats = weread_client.get_reading_stats(book_id)
         
-        # 构建字段数据
+        # 🔥 关键修复：所有日期字段改为Unix时间戳
         fields = {
             '书籍ID': book_id,
             '标题': title,
@@ -42,8 +45,8 @@ def sync_books_to_feishu(weread_client, feishu_client, base_id, table_id):
             '阅读页数': stats.get('read_pages', 0),
             '总页数': stats.get('total_pages', 0),
             '阅读天数': stats.get('read_days', 0),
-            '最后阅读时间': book['last_read_date'] or datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            '更新时间': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            '最后阅读时间': book['last_read_time'],  # Unix时间戳
+            '更新时间': int(datetime.now().timestamp()),  # Unix时间戳
         }
         
         # 判断是新增还是更新
@@ -55,7 +58,7 @@ def sync_books_to_feishu(weread_client, feishu_client, base_id, table_id):
             if feishu_client.add_record(base_id, table_id, fields):
                 success_count += 1
     
-    print(f"\n📊 书籍同步完成: 新增 {success_count} 本, 更新 {update_count} 本, 跳过 {skip_count} 本")
+    print(f"\n📊 书籍同步完成: 新增 {success_count} 本, 更新 {update_count} 本")
 
 def main():
     """主函数"""
@@ -72,11 +75,10 @@ def main():
     missing_vars = [k for k, v in required_vars.items() if not v]
     if missing_vars:
         print(f"❌ 缺少必要的环境变量: {', '.join(missing_vars)}")
-        print("请检查 GitHub Secrets 配置")
         sys.exit(1)
     
     print("✅ 环境变量检查通过")
-    print(f"飞书 Base ID: {required_vars['FEISHU_BASE_ID'][:10]}...")
+    print(f"飞书 Base ID: {required_vars['FEISHU_BASE_ID']}")
     print(f"微信读书用户: {dict(item.split('=') for item in required_vars['WEREAD_COOKIE'].split('; ')).get('wr_name', '未知')}")
     
     # 初始化客户端
@@ -85,6 +87,8 @@ def main():
         feishu_client = FeishuClient(required_vars['FEISHU_APP_ID'], required_vars['FEISHU_APP_SECRET'])
     except Exception as e:
         print(f"❌ 初始化客户端失败: {e}")
+        import traceback
+        traceback.print_exc()
         sys.exit(1)
     
     # 执行同步
