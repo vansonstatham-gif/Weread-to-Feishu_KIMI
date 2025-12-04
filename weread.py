@@ -26,31 +26,30 @@ class WeReadClient:
             all_books = data.get('books', [])
             print(f"📦 API返回的书籍总数: {len(all_books)}")
             
-            # 跳过前2本书籍（如果需要调试，可以取消下面这段的注释）
-            # if all_books:
-            #     print("\n=== 首本书籍结构示例 ===")
-            #     print(json.dumps(all_books[0], ensure_ascii=False, indent=2))
-            #     print("="*50)
-            
             for book in all_books:
-                # 🔥 关键修复：数据在顶层，不在book对象中
+                # 获取书籍基本信息
                 book_id = book.get('bookId')
                 title = book.get('title')
                 
-                # 跳过无效书籍
                 if not book_id or not title:
                     print(f"⚠️  跳过无效书籍: ID={book_id}, 标题={title}")
                     continue
                 
-                # 跳过非数字ID的内容（如公众号CB_开头）
+                # 跳过非数字ID的内容（如公众号）
                 if isinstance(book_id, str) and not book_id.isdigit():
                     print(f"📄 跳过非书籍内容: ID={book_id}, 标题={title}")
                     continue
                 
-                # 🔥 关键修复：日期字段转换为Unix时间戳
+                # 🔥 关键修复：正确提取所有字段
+                # 最后阅读时间（从readingBook对象获取）
                 last_read_time = 0
-                if book.get('readingBook') and book['readingBook'].get('readingTime'):
-                    last_read_time = int(book['readingBook']['readingTime'])
+                if book.get('readingBook'):
+                    # readingBook对象里的readingTime是最后阅读时间戳
+                    last_read_time = int(book['readingBook'].get('readingTime', 0))
+                
+                # 如果readingBook没有，使用book自身的updateTime
+                if last_read_time == 0:
+                    last_read_time = int(book.get('updateTime', 0))
                 
                 books.append({
                     'book_id': str(book_id),
@@ -59,8 +58,8 @@ class WeReadClient:
                     'cover': book.get('cover', ''),
                     'category': book.get('category', ''),
                     'finished': bool(book.get('finishReading', False)),
-                    'reading_time': int(book.get('readingTime', 0)),
-                    'progress': float(book.get('progress', 0)),
+                    'reading_time': int(book.get('readingTime', 0)),  # 总阅读时长（秒）
+                    'progress': float(book.get('progress', 0)),  # 阅读进度0-1
                     'format': book.get('format', 'book'),
                     'intro': book.get('intro', ''),
                     'last_read_time': last_read_time,  # Unix时间戳
@@ -91,18 +90,14 @@ class WeReadClient:
                     if not review.get('reviewId'):
                         continue
                     
-                    # 日期转换为Unix时间戳
-                    create_time = int(review.get('createTime', 0))
-                    update_time = int(review.get('updateTime', 0))
-                    
                     notes.append({
                         'review_id': str(review['reviewId']),
                         'book_id': str(book_id),
                         'chapter_name': review.get('chapterName', ''),
                         'abstract': review.get('abstract', ''),
                         'content': review.get('content', ''),
-                        'create_time': create_time,
-                        'update_time': update_time,
+                        'create_time': int(review.get('createTime', 0)),
+                        'update_time': int(review.get('updateTime', 0)),
                     })
             
             return notes
