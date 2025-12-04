@@ -33,11 +33,12 @@ def sync_books_to_feishu(weread_client, feishu_client, base_id, table_id):
         progress_pct = float(book['progress']) * 100
         read_minutes = int(book['reading_time'] / 60) if book['reading_time'] else 0
         
+        # 🔥 封面URL改为Link对象格式（修复飞书超链接字段）
         fields = {
             '书籍ID': book_id,
             '标题': title,
             '作者': book['author'],
-            '封面': book['cover'],
+            '封面': {'link': book['cover']},  # 超链接字段必须是对象
             '分类': book['category'],
             '阅读进度': progress_pct,
             '阅读时长(分钟)': read_minutes,
@@ -49,13 +50,14 @@ def sync_books_to_feishu(weread_client, feishu_client, base_id, table_id):
             '更新时间': int(datetime.now().timestamp()),
         }
         
-        # 智能处理
+        # 智能处理：存在则更新，更新失败则新增
         if book_id in existing_books:
             record_id = existing_books[book_id]['record_id']
             
             if feishu_client.update_record(base_id, table_id, record_id, fields):
                 update_count += 1
             else:
+                # 更新失败也不删除，直接新增一条
                 print(f"  ⚠️  更新失败，改为新增记录...")
                 if feishu_client.add_record(base_id, table_id, fields):
                     success_count += 1
@@ -130,7 +132,7 @@ def sync_notes_to_feishu(weread_client, feishu_client, base_id, notes_table_id):
 
 def main():
     """主函数"""
-    # 🔥 修复：只检查必填变量，FEISHU_NOTES_TABLE_ID 可选
+    # 🔥 FEISHU_NOTES_TABLE_ID 是可选的
     required_vars = {
         'FEISHU_APP_ID': os.environ.get('FEISHU_APP_ID'),
         'FEISHU_APP_SECRET': os.environ.get('FEISHU_APP_SECRET'),
@@ -156,7 +158,7 @@ def main():
     if notes_table_id:
         print(f"📌 笔记表格 ID: {notes_table_id}")
     else:
-        print(f"⚠️  未配置笔记表格 ID，将跳过笔记同步")
+        print(f"ℹ️  未配置 FEISHU_NOTES_TABLE_ID，将跳过笔记同步")
     print(f"👤 微信读书用户: {dict(item.split('=') for item in required_vars['WEREAD_COOKIE'].split('; ')).get('wr_name', '未知')}")
     
     # 初始化客户端
